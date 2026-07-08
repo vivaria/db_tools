@@ -1,5 +1,5 @@
 [project]
-name = "db-tools"
+name = "db_tools"
 version = "0.1.dev0"
 description = "Tools for working with DuelingBook"
 readme = "README.md"
@@ -8,9 +8,9 @@ license = {file = "LICENSE.txt"}
 keywords = ["yugioh", "duelingbook"]
 
 [project.urls]  # Optional
-"Homepage" = "https://github.com/vivaria/db-tools/"
-"Bug Reports" = "https://github.com/vivaria/db-tools/issues/"
-"Source" = "https://github.com/vivaria/db-tools/"
+"Homepage" = "https://github.com/vivaria/db_tools/"
+"Bug Reports" = "https://github.com/vivaria/db_tools/issues/"
+"Source" = "https://github.com/vivaria/db_tools/"
 
 [project.optional-dependencies]
 dev = ["pytest", "build", "pyinstaller", "twine", "toml-cli",

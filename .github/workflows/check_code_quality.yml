@@ -13,7 +13,7 @@ jobs:
   check-code-quality:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout db-tools
+    - name: Checkout db_tools
       uses: actions/checkout@v6
 
     - name: Set up Python
@@ -21,7 +21,7 @@ jobs:
       with:
         python-version: '3.14.x'
 
-    - name: Install db-tools and its dev dependencies
+    - name: Install db_tools and its dev dependencies
       run: |
         pip install -e .[dev]
 

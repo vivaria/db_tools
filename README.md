@@ -1,3 +1,3 @@
-## `db-tools`
+## `db_tools`
 
 Tools for working with DuelingBook.
