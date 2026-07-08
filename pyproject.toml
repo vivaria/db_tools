@@ -1,0 +1,40 @@
+[project]
+name = "db-tools"
+version = "0.1.dev0"
+description = "Tools for working with DuelingBook"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE.txt"}
+keywords = ["yugioh", "duelingbook"]
+
+[project.urls]  # Optional
+"Homepage" = "https://github.com/vivaria/db-tools/"
+"Bug Reports" = "https://github.com/vivaria/db-tools/issues/"
+"Source" = "https://github.com/vivaria/db-tools/"
+
+[project.optional-dependencies]
+dev = ["pytest", "build", "pyinstaller", "twine", "toml-cli",
+       "flake8", "pyproject-flake8", "mypy", "pylint"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-vv --tb=short --color=yes"
+console_output_style = "count"
+disable_test_id_escaping_and_forfeit_all_rights_to_community_support = "True"
+
+[tool.flake8]
+exclude = ".venv/"
+per-file-ignores = ""
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = """
+    too-many-instance-attributes,
+    too-many-branches,
+    too-many-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-positional-arguments,
+    fixme
+"""
