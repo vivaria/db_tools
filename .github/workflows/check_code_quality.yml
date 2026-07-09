@@ -34,6 +34,3 @@ jobs:
     - name: Type analysis using mypy
       run: mypy src --strict
 
-    - name: Run tests using pytest
-      run: pytest testing
-

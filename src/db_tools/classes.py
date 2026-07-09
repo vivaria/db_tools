@@ -1,10 +1,21 @@
+"""
+Classes used to represent DuelingBook replay game state.
+"""
 
+from __future__ import annotations
 
 import dataclasses
 import json
 from collections import UserDict
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, ClassVar, Optional, Union
+
+# A JSON object as produced by `json.load` - keys are always strings, but
+# values vary in type per-key (str, int, bool, list, nested dict, ...), so
+# they're left as `Any`. Fields with more specific types are the caller's
+# job to convert/validate on the way out (see the various `from_dict`s
+# below).
+JSONDict = dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +39,7 @@ class Card:
     name: str = "Unknown"
     id: Optional[int] = None
     card_type: Optional[str] = None        # "Monster" | "Spell" | "Trap"
-    type: Optional[str] = None             # monster type, e.g. "Effect", "Normal", "Fusion"
+    type: Optional[str] = None             # e.g. "Effect", "Normal", "Fusion"
     attribute: Optional[str] = None
     level: Optional[int] = None
     atk: Optional[int] = None
@@ -52,7 +63,6 @@ class Card:
     arrows: Optional[str] = None
     pic: Optional[str] = None
     treated_as: Optional[str] = None
-    raw: dict = dataclasses.field(default_factory=dict, repr=False)
 
     # Fields whose raw JSON value can be passed straight through untouched.
     _PASSTHROUGH_FIELDS = (
@@ -62,14 +72,15 @@ class Card:
     )
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Card":
-        """Build a `Card` from one raw card sub-dict. Always succeeds -
-        an unknown/missing dict just yields a placeholder `Card`."""
+    def from_dict(cls, data: JSONDict) -> "Card":
+        """Instantiate a Card from a dictionary."""
         kwargs = {k: data[k] for k in cls._PASSTHROUGH_FIELDS if k in data}
+        def_ = data.get("def")
+        atk = data.get("atk")
         return cls(
             name=data.get("name", "Unknown"),
-            def_=int(data.get("def")),
-            atk=int(data.get("atk")),
+            def_=int(def_) if def_ is not None else None,
+            atk=int(atk) if atk is not None else None,
             is_effect=bool(data.get("is_effect")),
             pendulum=bool(data.get("pendulum")),
             flip=bool(data.get("flip")),
@@ -77,12 +88,11 @@ class Card:
             tcg=bool(data.get("tcg")),
             ocg=bool(data.get("ocg")),
             rush=bool(data.get("rush")),
-            raw=data,
             **kwargs,
         )
 
 
-class CardRegistry(UserDict):
+class CardRegistry(UserDict[str, Card]):
     """Dict-like cache of full `Card` metadata, keyed by card name.
 
     A `CardRegistry` is meant to be instantiated *outside* of any single
@@ -94,7 +104,7 @@ class CardRegistry(UserDict):
     `registry.get("Some Card")`, exactly like a normal dict.
     """
 
-    def add(self, data: dict) -> str:
+    def add(self, data: JSONDict) -> str:
         """Register (or upgrade) the `Card` described by a card sub-dict,
         returning its name. The *first* time a given name is seen, a
         fresh `Card` is built and cached; every subsequent call for that
@@ -102,7 +112,7 @@ class CardRegistry(UserDict):
         latest dict's data, so anything already holding a reference to it
         (via `self[name]`) still sees the enriched data.
         """
-        name = data.get("name")
+        name: str = data.get("name", "Unknown")
         cached = self.data.get(name)
 
         if cached is None:
@@ -132,9 +142,8 @@ class LogEntry:
     private_log: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: Optional[dict]) -> Optional["LogEntry"]:
-        if not isinstance(data, dict):
-            return None
+    def from_dict(cls, data: JSONDict) -> "LogEntry":
+        """Instantiate a LogEntry from a dictionary."""
         return cls(
             username=data.get("username"),
             type=data.get("type"),
@@ -149,7 +158,7 @@ class Play:
 
     `play` is the only field guaranteed to be present; every other field is
     Optional and will simply be `None` (or empty) for play types that don't
-    carry that piece of data. `raw` always holds the untouched source dict.
+    carry that piece of data.
 
     DuelingBook replays are a flat, heterogeneous list of event dicts -
     every event has a `play` field naming its type (e.g. "Attack",
@@ -160,10 +169,7 @@ class Play:
     Rather than modelling every play type as its own class, `Play` is a
     single flat dataclass with one optional field per key that's ever been
     observed across the cataloged play types. Any event can be losslessly
-    converted to a `Play` via `Play.from_dict`, and the original dict is
-    always kept around on `.raw` so nothing is ever lost even for keys this
-    dataclass doesn't know about yet.
-
+    converted to a `Play` via `Play.from_dict`.
     Field type notes:
         log
             Usually a single log dict (`{"public_log", "private_log"?,
@@ -196,23 +202,22 @@ class Play:
 
     # -- Always present --------------------------------------------------
     play: str
-    raw: dict = dataclasses.field(default_factory=dict, repr=False)
 
     # -- Common to almost every play type ---------------------------------
     action: Optional[str] = None
     seconds: Optional[int] = None
     username: Optional[str] = None
-    log: Optional[Union[LogEntry, list]] = None
+    log: Optional[Union[LogEntry, list["LogEntry"]]] = None
 
     # -- Card / object references ------------------------------------------
-    card: Optional[str] = None             # card name (Draw card, To GY, Activate ST, ...) - full Card via CardRegistry
-    cards: Optional[list] = None           # list[str] card names (Pick first - opening hands)
-    id: Optional[int] = None               # object_id this play acts on
-    attacking_id: Optional[int] = None     # Attack
-    attacked_id: Optional[int] = None      # Attack
-    name: Optional[str] = None             # Declare (named card/effect)
-    zone: Optional[str] = None             # Move / Activate ST - destination zone token, e.g. "M2-3"
-    owner: Optional[str] = None            # Move / To GY - owning username of the affected card
+    card: Optional[str] = None          # card name (get Card via CardRegistry)
+    cards: Optional[list[str]] = None   # list[str] card names (Opening hands)
+    id: Optional[int] = None            # object_id this play acts on
+    attacking_id: Optional[int] = None  # Attack
+    attacked_id: Optional[int] = None   # Attack
+    name: Optional[str] = None          # Declare (named card/effect)
+    zone: Optional[str] = None          # Move / Activate ST - destination zone
+    owner: Optional[str] = None         # Move / To GY - owning username
 
     # -- Life points ---------------------------------------------------
     amount: Optional[int] = None
@@ -221,18 +226,18 @@ class Play:
     word: Optional[str] = None             # "increased" | "decreased"
 
     # -- Counters --------------------------------------------------------
-    total: Optional[int] = None            # Add counter - resulting counter count
+    total: Optional[int] = None            # Add counter - resulting count
 
     # -- Ordering / shuffling metadata ------------------------------------
-    prev: Optional[list] = None            # previous object_id order (Reveal, Shuffle hand, ...)
-    deck: Optional[list] = None            # object_id order (Shuffle deck)
-    hand: Optional[list] = None            # object_id order (Shuffle hand, Add random card..., To hand)
+    prev: Optional[list[int]] = None       # previous object_id order
+    deck: Optional[list[int]] = None       # object_id order (Shuffle deck)
+    hand: Optional[list[int]] = None       # object_id order (Shuffle hand)
     shuffle: Optional[bool] = None
 
     # -- Viewing / picking -------------------------------------------------
-    viewing: Optional[str] = None          # "Graveyard", "Deck (Picking 3 Cards)", ...
-    callback: Optional[str] = None         # Pick 3 cards - the play type triggered once picking finishes
-    line: Optional[str] = None             # Add random card from deck to hand - public-facing text
+    viewing: Optional[str] = None          # "Graveyard", "Deck", etc.
+    callback: Optional[str] = None         # Pick 3 cards
+    line: Optional[str] = None             # Add random card from deck to hand
 
     # -- Misc / chat -------------------------------------------------------
     message: Optional[str] = None
@@ -254,41 +259,42 @@ class Play:
     # Construction
     # ------------------------------------------------------------------
 
-    _FIELD_NAMES = None  # populated lazily below
+    _FIELD_NAMES: ClassVar[set[str]] = set()  # populated lazily below
 
     @classmethod
-    def from_dict(cls, data: dict, registry: CardRegistry) -> "Play":
-        """Build a `Play` from one raw event dict out of a replay's
-        `plays` array. Unknown keys are silently preserved on `.raw` only.
-
-        `registry` is the shared `CardRegistry` that `.card`/`.cards` are
-        registered into - only the card's bare `name` is kept on the
-        `Play` itself; the full `Card` metadata lives in `registry` and
-        can be fetched later via `registry.get(name)` / `registry[name]`.
-        """
-        if cls._FIELD_NAMES is None:
-            cls._FIELD_NAMES = {f.name for f in dataclasses.fields(cls)} - {"raw", "log", "card", "cards", "play"}
+    def from_dict(cls, data: JSONDict, registry: CardRegistry) -> "Play":
+        """Instantiate a Play from a dictionary."""
+        if not cls._FIELD_NAMES:
+            cls._FIELD_NAMES = ({f.name for f in dataclasses.fields(cls)}
+                                - {"log", "card", "cards", "play"})
 
         log_data = data.get("log")
         if isinstance(log_data, list):
-            log: Optional[Union[LogEntry, list]] = [
-                entry for entry in (LogEntry.from_dict(e) for e in log_data) if entry is not None
+            log: Optional[Union[LogEntry, list[LogEntry]]] = [
+                entry for entry in (LogEntry.from_dict(e) for e in log_data)
+                if entry is not None
             ]
-        else:
+        elif isinstance(log_data, dict):
             log = LogEntry.from_dict(log_data)
+        else:
+            log = LogEntry()
 
+        card: Optional[str]
         if "card" in data:
-            card = registry.add(data.get("card"))
+            card = registry.add(data["card"])
         else:
             card = None
 
+        cards: Optional[list[str]]
         if "cards" in data:
             cards = [registry.add(c) for c in data["cards"]]
         else:
             cards = None
 
         kwargs = {k: data[k] for k in cls._FIELD_NAMES if k in data}
-        return cls(play=data.get("play", ""), raw=data, log=log, card=card, cards=cards, **kwargs)
+        return cls(play=data.get("play", ""), log=log,
+                   card=card, cards=cards, **kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Replay metadata
@@ -317,14 +323,13 @@ class PlayerInfo:
     main_total: Optional[int] = None
     extra_total: Optional[int] = None
     side_total: Optional[int] = None
-    main: list = dataclasses.field(default_factory=list)
-    extra: list = dataclasses.field(default_factory=list)
-    side: list = dataclasses.field(default_factory=list)
+    main: list[int] = dataclasses.field(default_factory=list)
+    extra: list[int] = dataclasses.field(default_factory=list)
+    side: list[int] = dataclasses.field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Optional[dict]) -> Optional["PlayerInfo"]:
-        if not isinstance(data, dict):
-            return None
+    def from_dict(cls, data: JSONDict) -> "PlayerInfo":
+        """Instantiate a PlayerInfo from a dictionary."""
         return cls(
             username=data.get("username"),
             user_id=data.get("user_id"),
@@ -375,23 +380,18 @@ class Replay:
     player3: Optional[PlayerInfo] = None
     player4: Optional[PlayerInfo] = None
 
-    logs: list = dataclasses.field(default_factory=list)   # list[LogEntry] - top-level join/pairing log
-    plays: list = dataclasses.field(default_factory=list)  # list[Play]
+    logs: list[LogEntry] = dataclasses.field(default_factory=list)
+    plays: list[Play] = dataclasses.field(default_factory=list)
 
     # The (externally-owned) registry every Play's `.card`/`.cards` name
     # was registered into - kept around purely for convenience so callers
     # can look up full `Card` metadata straight off the `Replay`.
-    card_registry: Optional[CardRegistry] = dataclasses.field(default=None, repr=False)
+    card_registry: Optional[CardRegistry] = dataclasses.field(default=None,
+                                                              repr=False)
 
     @classmethod
-    def from_dict(cls, data: dict, registry: CardRegistry) -> "Replay":
-        """Build a `Replay` from a full replay JSON dict (as returned by
-        the DuelingBook view-replay/ API endpoint).
-
-        `registry` is a `CardRegistry` instantiated by the caller (so it
-        can be reused/shared across multiple replays if desired) that
-        every play's card name(s) are registered into.
-        """
+    def from_dict(cls, data: JSONDict, registry: CardRegistry) -> "Replay":
+        """Instantiate a Replay from a dictionary."""
         logs = [LogEntry.from_dict(log) for log in data["logs"]]
         plays = [Play.from_dict(p, registry=registry) for p in data["plays"]]
 
@@ -409,17 +409,18 @@ class Replay:
             password=data.get("password"),
             links=data.get("links"),
             liked=data.get("liked"),
-            player1=PlayerInfo.from_dict(data.get("player1")),
-            player2=PlayerInfo.from_dict(data.get("player2")),
-            player3=PlayerInfo.from_dict(data.get("player3")),
-            player4=PlayerInfo.from_dict(data.get("player4")),
+            player1=PlayerInfo.from_dict(data.get("player1") or {}),
+            player2=PlayerInfo.from_dict(data.get("player2") or {}),
+            player3=PlayerInfo(),  # Assume we only analyze 2-player duels
+            player4=PlayerInfo(),
             logs=logs,
             plays=plays,
             card_registry=registry,
         )
 
     @classmethod
-    def from_json_file(cls, path: Union[str, Path], registry: CardRegistry) -> "Replay":
+    def from_json_file(cls, path: Union[str, Path],
+                       registry: CardRegistry) -> "Replay":
         """Convenience loader: read and parse a replay JSON file on disk.
 
         `registry` is passed straight through to `from_dict` - see there
@@ -428,4 +429,3 @@ class Replay:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return cls.from_dict(data, registry=registry)
-

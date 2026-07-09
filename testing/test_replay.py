@@ -13,4 +13,3 @@ def test_load_replay():
 
     assert replay.plays
     assert len(registry) > 0
-
